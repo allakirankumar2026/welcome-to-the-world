@@ -1,18 +1,14 @@
 (() => {
   "use strict";
 
-  // J.A.R.V.I.S Command Engine v3.4
+  // J.A.R.V.I.S Command Engine v3.4 (fixed)
+  // Browser-side commands only. This is not an Android/Linux/Windows shell.
 
   const $ = (id) => document.getElementById(id);
   const API_KEY_STORAGE = "jarvis_key";
   const MEMORY_STORAGE = "jarvis_local_memories";
-
-  const GEMINI_MODELS = [
-    "gemini-2.5-flash",
-    "gemini-flash-latest"
-  ];
-
-  const SPEECH_LANGUAGE = "en-US";
+  const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-flash-latest"];
+  const SPEECH_LANGUAGE = "en-US"; // Change to te-IN for Telugu speech recognition.
 
   const chatLog = $("chatLog");
   const messageInput = $("messageInput");
@@ -20,9 +16,8 @@
   const terminalForm = $("terminalForm");
   const terminalInput = $("terminalInput");
 
-  if (!chatLog || !messageInput || !terminalOutput ||
-      !terminalForm || !terminalInput) {
-    console.error("JARVIS: Required HTML elements missing.");
+  if (!chatLog || !messageInput || !terminalOutput || !terminalForm || !terminalInput) {
+    console.error("J.A.R.V.I.S: Required HTML elements are missing. Check index.html IDs.");
     return;
   }
 
@@ -32,23 +27,23 @@
   let apiKey = localStorage.getItem(API_KEY_STORAGE) || "";
 
   function nowTime() {
-    return new Date().toLocaleTimeString();
+    return new Date().toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit"
+    });
   }
 
   function updateClock() {
     const now = new Date();
-
     if ($("heroClock")) {
-      $("heroClock").textContent =
-        now.toLocaleTimeString([], { hour12: false });
+      $("heroClock").textContent = now.toLocaleTimeString([], { hour12: false });
     }
-
     if ($("localTime")) {
-      $("localTime").textContent =
-        now.toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit"
-        });
+      $("localTime").textContent = now.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit"
+      });
     }
   }
 
@@ -57,34 +52,29 @@
 
   function terminalLine(text, kind = "") {
     const p = document.createElement("p");
-    p.textContent = String(text);
-
     if (kind) p.className = kind;
-
+    p.textContent = String(text);
     terminalOutput.appendChild(p);
     terminalOutput.scrollTop = terminalOutput.scrollHeight;
   }
 
   function setGeminiState(label, className = "state-wait") {
     const el = $("geminiState");
-
     if (!el) return;
-
     el.textContent = label;
     el.className = className;
   }
 
   function addMessage(who, text) {
     const wrapper = document.createElement("div");
-    wrapper.className =
-      "message " + (who === "YOU" ? "user" : "assistant");
+    wrapper.className = "message " + (who === "YOU" ? "user" : "assistant");
 
     const tag = document.createElement("span");
     tag.className = "message-tag";
     tag.textContent = who;
 
     const paragraph = document.createElement("p");
-    paragraph.textContent = text;
+    paragraph.textContent = String(text);
 
     const time = document.createElement("time");
     time.textContent = nowTime();
@@ -92,45 +82,38 @@
     wrapper.append(tag, paragraph, time);
     chatLog.appendChild(wrapper);
     chatLog.scrollTop = chatLog.scrollHeight;
-
     return paragraph;
   }
 
   function speak(text) {
     if (!voiceEnabled || !("speechSynthesis" in window)) return;
-
     window.speechSynthesis.cancel();
-
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 1.02;
     utterance.pitch = 0.9;
-
     window.speechSynthesis.speak(utterance);
   }
 
   function requestApiKey(force = false) {
     if (!force && apiKey) return apiKey;
 
-    const entered = prompt(
-      "Enter your Gemini API key. Stored only in this browser."
+    const entered = window.prompt(
+      "Enter your Gemini API key. It will be stored in this browser only, not in GitHub."
     );
 
     if (entered && entered.trim()) {
       apiKey = entered.trim();
-
       localStorage.setItem(API_KEY_STORAGE, apiKey);
-
       setGeminiState("KEY SAVED", "state-on");
-
-      terminalLine(
-        "[KEY] Gemini key saved.",
-        "terminal-success"
-      );
+      terminalLine("[KEY] Gemini key saved in this browser.", "terminal-success");
+    } else if (force) {
+      terminalLine("[KEY] Key was not changed.");
     }
 
     return apiKey;
   }
 
+  // Do not interrupt the user with an API-key prompt on every first page load.
   if (apiKey) {
     setGeminiState("KEY SAVED", "state-on");
   } else {
@@ -138,8 +121,8 @@
   }
 
   $("keySettings")?.addEventListener("click", () => {
-    const replace = confirm(
-      "OK = Add or replace key. Cancel = Remove saved key."
+    const replace = window.confirm(
+      "OK = enter or replace Gemini API key. Cancel = remove the saved key."
     );
 
     if (replace) {
@@ -148,77 +131,71 @@
       apiKey = "";
       localStorage.removeItem(API_KEY_STORAGE);
       setGeminiState("KEY NEEDED");
-
-      terminalLine("[KEY] Saved key removed.");
+      terminalLine("[KEY] Saved key removed from this browser.");
     }
   });
 
   function renderNetworkStatus() {
     const el = $("networkStatus");
     if (!el) return;
-
-    el.textContent = navigator.onLine
-      ? "CONNECTED"
-      : "OFFLINE";
-
-    el.className = navigator.onLine
-      ? "good"
-      : "state-off";
+    el.textContent = navigator.onLine ? "CONNECTED" : "OFFLINE";
+    el.className = navigator.onLine ? "good" : "state-off";
   }
 
   renderNetworkStatus();
 
-  window.addEventListener("online", renderNetworkStatus);
-  window.addEventListener("offline", renderNetworkStatus);
+  window.addEventListener("online", () => {
+    renderNetworkStatus();
+    terminalLine("[NET] Browser is online.");
+  });
+
+  window.addEventListener("offline", () => {
+    renderNetworkStatus();
+    terminalLine("[NET] Browser is offline.", "terminal-error");
+  });
 
   if (typeof navigator.getBattery === "function") {
     navigator.getBattery().then((battery) => {
-      function renderBattery() {
-        if ($("batteryValue")) {
-          $("batteryValue").textContent =
-            Math.round(battery.level * 100) +
-            "%" + (battery.charging ? " CHG" : "");
+      const renderBattery = () => {
+        const el = $("batteryValue");
+        if (el) {
+          el.textContent =
+            Math.round(battery.level * 100) + "%" + (battery.charging ? " CHG" : "");
         }
-      }
+      };
 
       renderBattery();
-
       battery.addEventListener("levelchange", renderBattery);
       battery.addEventListener("chargingchange", renderBattery);
     }).catch(() => {
-      if ($("batteryValue")) {
-        $("batteryValue").textContent = "N/A";
-      }
+      if ($("batteryValue")) $("batteryValue").textContent = "N/A";
     });
+  } else if ($("batteryValue")) {
+    $("batteryValue").textContent = "N/A";
   }
 
   async function callGemini(promptText) {
     if (!apiKey) {
       requestApiKey(false);
-
       if (!apiKey) {
-        throw new Error("Gemini API key is required.");
+        throw new Error("Gemini API key missing. Tap the key icon to add it.");
       }
     }
 
-    let lastError;
+    let lastError = new Error("No configured Gemini model responded.");
 
     for (const model of GEMINI_MODELS) {
       try {
         const response = await fetch(
           "https://generativelanguage.googleapis.com/v1beta/models/" +
-          encodeURIComponent(model) +
-          ":generateContent?key=" +
-          encodeURIComponent(apiKey),
+            encodeURIComponent(model) +
+            ":generateContent?key=" +
+            encodeURIComponent(apiKey),
           {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json"
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              contents: [{
-                parts: [{ text: promptText }]
-              }],
+              contents: [{ parts: [{ text: promptText }] }],
               generationConfig: {
                 temperature: 0.7,
                 maxOutputTokens: 900
@@ -227,102 +204,80 @@
           }
         );
 
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
 
         if (!response.ok) {
-          lastError = new Error(
-            data?.error?.message || "Gemini API error"
-          );
+          const message =
+            data?.error?.message ||
+            ("Gemini API returned HTTP " + response.status);
+          lastError = new Error(model + ": " + message);
 
           if (
-            /not found|unsupported|unavailable|rate|quota|deprecated/i
-              .test(lastError.message)
+            /not found|unsupported|unavailable|temporar|high demand|rate|quota|deprecated/i.test(
+              message
+            )
           ) {
             continue;
           }
-
           throw lastError;
         }
 
         const answer = data?.candidates?.[0]?.content?.parts
-          ?.map(part => part.text || "")
+          ?.map((part) => part.text || "")
           .join("")
           .trim();
 
         if (answer) return answer;
-
+        lastError = new Error(model + ": Gemini returned an empty answer.");
       } catch (error) {
         lastError = error;
-
         if (
-          /not found|unsupported|unavailable|rate|quota|deprecated/i
-            .test(error.message)
+          /not found|unsupported|unavailable|temporar|high demand|rate|quota|deprecated/i.test(
+            error.message
+          )
         ) {
           continue;
         }
-
         throw error;
       }
     }
 
-    throw lastError || new Error("Gemini unavailable.");
+    throw lastError;
   }
 
   async function askGemini(text, renderInChat = true) {
     setGeminiState("THINKING");
 
     let replyNode = null;
-
     if (renderInChat) {
       replyNode = addMessage("J.A.R.V.I.S", "Thinking...");
     }
 
     try {
       const answer = await callGemini(text);
-
-      if (replyNode) {
-        replyNode.textContent = answer;
-      }
+      if (replyNode) replyNode.textContent = answer;
 
       setGeminiState("ONLINE", "state-on");
-
       if (!renderInChat) {
-        terminalLine(
-          "[J.A.R.V.I.S] " + answer,
-          "terminal-success"
-        );
+        terminalLine("[J.A.R.V.I.S] " + answer, "terminal-success");
       }
 
       speak(answer);
-
       return answer;
-
     } catch (error) {
-      if (replyNode) {
-        replyNode.textContent = "ERROR: " + error.message;
-      }
-
-      setGeminiState(
-        apiKey ? "CHECK KEY" : "KEY NEEDED"
-      );
-
-      terminalLine(
-        "[GEMINI ERROR] " + error.message,
-        "terminal-error"
-      );
-
+      if (replyNode) replyNode.textContent = "ERROR: " + error.message;
+      setGeminiState(apiKey ? "CHECK KEY" : "KEY NEEDED");
+      terminalLine("[GEMINI ERROR] " + error.message, "terminal-error");
       return null;
     }
   }
 
   function sendMessage() {
     const text = messageInput.value.trim();
-
     if (!text) return;
 
     addMessage("YOU", text);
     messageInput.value = "";
-
     askGemini(text, true);
   }
 
@@ -334,29 +289,23 @@
 
   $("clearChat")?.addEventListener("click", () => {
     chatLog.replaceChildren();
-
-    addMessage(
-      "J.A.R.V.I.S",
-      "Transcript cleared. New session ready."
-    );
+    addMessage("J.A.R.V.I.S", "Transcript cleared. New session ready.");
   });
 
   $("soundToggle")?.addEventListener("click", () => {
     voiceEnabled = !voiceEnabled;
-
-    $("soundToggle").textContent =
-      voiceEnabled ? "🔊" : "🔇";
+    $("soundToggle").textContent = voiceEnabled ? "🔊" : "🔇";
 
     if (!voiceEnabled && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
     }
 
     terminalLine(
-      "[VOICE] " +
-      (voiceEnabled ? "Speech enabled." : "Speech muted.")
+      "[VOICE] Speech output " + (voiceEnabled ? "enabled." : "muted.")
     );
   });
-    // Notes are stored only in this browser; they are not synced to other devices.
+
+  // Notes are stored only in this browser; they are not synced to other devices.
   function getMemories() {
     try {
       const list = JSON.parse(localStorage.getItem(MEMORY_STORAGE) || "[]");
@@ -373,8 +322,8 @@
   }
 
   // Open a new tab synchronously from the terminal submit gesture.
-  // Avoid the "noopener" feature string because some browsers return null
-  // even when the tab opens.
+  // Do not use the "noopener" window.open feature string here: some browsers
+  // return null even when the tab opened, causing a false popup-blocked report.
   function openExternal(url, label) {
     const opened = window.open(url, "_blank");
 
@@ -384,11 +333,7 @@
       } catch (_) {
         // The browser may restrict access to the new browsing context.
       }
-
-      terminalLine(
-        "[OPEN] " + label + " opened in a new tab.",
-        "terminal-success"
-      );
+      terminalLine("[OPEN] " + label + " opened in a new tab.", "terminal-success");
     } else {
       terminalLine(
         "[OPEN] Your browser blocked the new tab. Allow pop-ups for this site, then try again. Address: " +
@@ -424,19 +369,19 @@
       label: "Gmail"
     },
     github: {
-      url: "https://github.com/allakirankumar2026/ai-agent-setup",
+      url: "https://github.com/allakirankumar2026/welcome-to-the-world",
       label: "GitHub repository"
     },
     "my github": {
-      url: "https://github.com/allakirankumar2026/ai-agent-setup",
+      url: "https://github.com/allakirankumar2026/welcome-to-the-world",
       label: "GitHub repository"
     },
     jarvis: {
-      url: "https://allakirankumar2026.github.io/ai-agent-setup/Frontend/",
+      url: "https://allakirankumar2026.github.io/welcome-to-the-world/Frontend/",
       label: "J.A.R.V.I.S dashboard"
     },
     "j.a.r.v.i.s": {
-      url: "https://allakirankumar2026.github.io/ai-agent-setup/Frontend/",
+      url: "https://allakirankumar2026.github.io/welcome-to-the-world/Frontend/",
       label: "J.A.R.V.I.S dashboard"
     }
   };
@@ -524,7 +469,6 @@
       "&forecast_days=1&timezone=auto";
 
     const response = await fetch(url);
-
     if (!response.ok) {
       throw new Error("Weather service HTTP " + response.status);
     }
@@ -534,7 +478,6 @@
     const daily = data.daily;
 
     terminalLine("[WEATHER] " + placeName, "terminal-success");
-
     terminalLine(
       "[NOW] " +
         weatherDescription(current.weather_code) +
@@ -544,7 +487,6 @@
         current.apparent_temperature +
         "°C"
     );
-
     terminalLine(
       "[DETAILS] Humidity " +
         current.relative_humidity_2m +
@@ -581,7 +523,6 @@
         "&count=1&language=en&format=json";
 
       const geoResponse = await fetch(geoUrl);
-
       if (!geoResponse.ok) {
         throw new Error("Location lookup HTTP " + geoResponse.status);
       }
@@ -590,25 +531,16 @@
       const place = geo.results?.[0];
 
       if (!place) {
-        throw new Error(
-          "Couldn't find that city. Try a nearby major city name."
-        );
+        throw new Error("Couldn't find that city. Try a nearby major city name.");
       }
 
       const label = [place.name, place.admin1, place.country]
         .filter(Boolean)
         .join(", ");
 
-      await fetchWeather(
-        place.latitude,
-        place.longitude,
-        label
-      );
+      await fetchWeather(place.latitude, place.longitude, label);
     } catch (error) {
-      terminalLine(
-        "[WEATHER ERROR] " + error.message,
-        "terminal-error"
-      );
+      terminalLine("[WEATHER ERROR] " + error.message, "terminal-error");
     }
   }
 
@@ -621,9 +553,7 @@
       return;
     }
 
-    terminalLine(
-      "[WEATHER] Requesting this device's location permission..."
-    );
+    terminalLine("[WEATHER] Requesting this device's location permission...");
 
     navigator.geolocation.getCurrentPosition(
       async (position) => {
@@ -634,10 +564,7 @@
             "Your current location"
           );
         } catch (error) {
-          terminalLine(
-            "[WEATHER ERROR] " + error.message,
-            "terminal-error"
-          );
+          terminalLine("[WEATHER ERROR] " + error.message, "terminal-error");
         }
       },
       (error) => {
@@ -657,7 +584,7 @@
 
     try {
       const response = await fetch(
-        "https://api.github.com/repos/allakirankumar2026/ai-agent-setup"
+        "https://api.github.com/repos/allakirankumar2026/welcome-to-the-world"
       );
 
       if (!response.ok) {
@@ -665,29 +592,374 @@
       }
 
       const repo = await response.json();
-
       terminalLine(
         "[GITHUB] " +
           repo.full_name +
           " · " +
           (repo.private ? "private" : "public")
       );
-
       terminalLine(
         "[GITHUB] Branch: " +
           repo.default_branch +
           " · Stars: " +
           repo.stargazers_count
       );
-
       terminalLine(
         "[GITHUB] Last updated: " +
           new Date(repo.updated_at).toLocaleString()
       );
     } catch (error) {
-      terminalLine(
-        "[GITHUB ERROR] " + error.message,
-        "terminal-error"
-      );
+      terminalLine("[GITHUB ERROR] " + error.message, "terminal-error");
     }
   }
+
+  async function runCommand(raw) {
+    const command = raw.trim();
+    const lower = command.toLowerCase();
+
+    if (!command) return;
+
+    terminalLine("$ " + command);
+
+    // Direct navigation. These cases run before any await so the browser
+    // receives the open-tab request during the user's terminal interaction.
+    const navigationMatch = lower.match(
+      /^(?:(?:open|go to|goto|launch|start)\s+)?(.+?)$/
+    );
+
+    if (navigationMatch) {
+      const possibleTarget = normalizeNavigationTarget(navigationMatch[1]);
+      if (WEBSITE_MAP[possibleTarget]) {
+        navigateTo(possibleTarget);
+        return;
+      }
+    }
+
+    // Friendly navigation forms and common aliases.
+    const aliasMatch = lower.match(
+      /^(?:please\s+)?(?:open|go to|goto|launch|start)\s+(.+)$/
+    );
+
+    if (aliasMatch && WEBSITE_MAP[normalizeNavigationTarget(aliasMatch[1])]) {
+      navigateTo(aliasMatch[1]);
+      return;
+    }
+
+    const naturalWeather = lower.match(
+      /^(?:what is the )?weather(?: like)?(?: in| at)\s+(.+)\??$/i
+    );
+
+    if (naturalWeather) {
+      const city = naturalWeather[1].replace(/[?]+$/, "").trim();
+      terminalLine("[ALIAS] Weather lookup: " + city);
+      await weatherForCity(city);
+      return;
+    }
+
+    if (/^(?:what time is it|tell me the time)\??$/i.test(command)) {
+      terminalLine("[TIME] " + new Date().toLocaleTimeString());
+      return;
+    }
+
+    if (/^(?:check )?system status\??$/i.test(command)) {
+      await runCommand("status");
+      return;
+    }
+
+    if (lower === "help") {
+      terminalLine("BASIC: help | status | time | date | clear | voice on | voice off | key reset");
+      terminalLine("WEB: Google | open Google | open YouTube | open Gmail | open GitHub | open JARVIS");
+      terminalLine("SEARCH: search <query> | search YouTube <query>");
+      terminalLine("AI: ask <question> (uses your Gemini API key)");
+      terminalLine("TOOLS: weather | weather today | weather <city> | github status | system info");
+      terminalLine("MEMORY: remember <text> | read memory | forget memory");
+      terminalLine("This is a browser command console, not an Android/Linux/Windows shell.");
+      return;
+    }
+
+    if (lower === "status") {
+      terminalLine(
+        "[SYS] UI ONLINE · NETWORK " +
+          (navigator.onLine ? "CONNECTED" : "OFFLINE") +
+          " · GEMINI " +
+          (apiKey ? "KEY SAVED" : "KEY NEEDED") +
+          " · VOICE " +
+          (recognition ? "SUPPORTED" : "CHECK BROWSER")
+      );
+      return;
+    }
+
+    if (lower === "time") {
+      terminalLine("[TIME] " + new Date().toLocaleTimeString());
+      return;
+    }
+
+    if (lower === "date") {
+      terminalLine("[DATE] " + new Date().toLocaleDateString());
+      return;
+    }
+
+    if (lower === "clear") {
+      terminalOutput.replaceChildren();
+      terminalLine("[SYS] Console cleared.");
+      return;
+    }
+
+    if (lower === "voice on" || lower === "voice off") {
+      voiceEnabled = lower.endsWith("on");
+      if ($("soundToggle")) {
+        $("soundToggle").textContent = voiceEnabled ? "🔊" : "🔇";
+      }
+
+      if (!voiceEnabled && "speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
+
+      terminalLine(
+        "[VOICE] Speech output " + (voiceEnabled ? "enabled." : "muted.")
+      );
+      return;
+    }
+
+    if (lower === "key reset") {
+      apiKey = "";
+      localStorage.removeItem(API_KEY_STORAGE);
+      setGeminiState("KEY NEEDED");
+      terminalLine("[KEY] Gemini key removed from this browser.");
+      return;
+    }
+
+    if (lower === "system info") {
+      showSystemInfo();
+      return;
+    }
+
+    if (
+      lower === "weather" ||
+      lower === "weather today" ||
+      lower === "weather current"
+    ) {
+      weatherForCurrentLocation();
+      return;
+    }
+
+    if (lower.startsWith("weather ")) {
+      const city = command
+        .slice(8)
+        .trim()
+        .replace(/^at\s+/i, "");
+
+      if (!city || city.toLowerCase() === "today") {
+        weatherForCurrentLocation();
+      } else {
+        await weatherForCity(city);
+      }
+      return;
+    }
+
+    if (lower === "github status") {
+      await githubStatus();
+      return;
+    }
+
+    if (lower.startsWith("search youtube ")) {
+      const query = command.slice("search youtube ".length).trim();
+      if (!query) {
+        terminalLine("[USAGE] search youtube <query>");
+        return;
+      }
+
+      openExternal(
+        "https://www.youtube.com/results?search_query=" +
+          encodeURIComponent(query),
+        "YouTube search"
+      );
+      return;
+    }
+
+    if (lower.startsWith("search ")) {
+      const query = command.slice(7).trim();
+      if (!query) {
+        terminalLine("[USAGE] search <query>");
+        return;
+      }
+
+      openExternal(
+        "https://www.google.com/search?q=" + encodeURIComponent(query),
+        "Google search"
+      );
+      return;
+    }
+
+    if (lower.startsWith("open ")) {
+      navigateTo(command.slice(5));
+      return;
+    }
+
+    if (lower.startsWith("go to ")) {
+      navigateTo(command.slice(6));
+      return;
+    }
+
+    if (lower.startsWith("goto ")) {
+      navigateTo(command.slice(5));
+      return;
+    }
+
+    if (lower.startsWith("launch ")) {
+      navigateTo(command.slice(7));
+      return;
+    }
+
+    if (lower.startsWith("start ")) {
+      navigateTo(command.slice(6));
+      return;
+    }
+
+    if (lower.startsWith("ask ")) {
+      const question = command.slice(4).trim();
+      if (!question) {
+        terminalLine("[USAGE] ask <question>");
+        return;
+      }
+
+      terminalLine("[GEMINI] Processing...");
+      await askGemini(question, false);
+      return;
+    }
+
+    if (lower.startsWith("remember ")) {
+      const note = command.slice(9).trim();
+      if (!note) {
+        terminalLine("[USAGE] remember <text>");
+        return;
+      }
+
+      saveMemory(note);
+      terminalLine("[MEMORY] Saved locally in this browser.", "terminal-success");
+      return;
+    }
+
+    if (lower === "read memory") {
+      const memories = getMemories();
+
+      if (!memories.length) {
+        terminalLine("[MEMORY] No saved notes.");
+        return;
+      }
+
+      memories.forEach((item, index) => {
+        terminalLine(
+          "[" +
+            (index + 1) +
+            "] " +
+            item.text +
+            " · " +
+            new Date(item.savedAt).toLocaleDateString()
+        );
+      });
+      return;
+    }
+
+    if (lower === "forget memory") {
+      localStorage.removeItem(MEMORY_STORAGE);
+      terminalLine("[MEMORY] All J.A.R.V.I.S local notes cleared.");
+      return;
+    }
+
+    terminalLine(
+      "[ERR] Unknown command. Try: open Google, weather Kuala Lumpur, status, or help.",
+      "terminal-error"
+    );
+  }
+
+  terminalForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    const command = terminalInput.value;
+    terminalInput.value = "";
+
+    await runCommand(command);
+    terminalInput.focus();
+  });
+
+  $("clearTerminal")?.addEventListener("click", () => {
+    terminalOutput.replaceChildren();
+    terminalLine("[SYS] Console cleared.");
+  });
+
+  const SpeechRecognition =
+    window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  if (SpeechRecognition) {
+    recognition = new SpeechRecognition();
+    recognition.lang = SPEECH_LANGUAGE;
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+      listening = true;
+      if ($("micButton")) $("micButton").textContent = "● LISTENING...";
+      if ($("voiceStatus")) $("voiceStatus").textContent = "SPEAK NOW";
+    };
+
+    recognition.onresult = (event) => {
+      const transcript = event.results?.[0]?.[0]?.transcript || "";
+      if (!transcript.trim()) return;
+
+      addMessage("YOU", transcript);
+      askGemini(transcript, true);
+    };
+
+    recognition.onerror = (event) => {
+      if ($("voiceStatus")) {
+        $("voiceStatus").textContent =
+          "MIC ERROR: " + String(event.error || "UNKNOWN").toUpperCase();
+      }
+
+      terminalLine(
+        "[MIC ERROR] " + (event.error || "Unknown speech error"),
+        "terminal-error"
+      );
+    };
+
+    recognition.onend = () => {
+      listening = false;
+      if ($("micButton")) $("micButton").textContent = "🎙 PUSH TO TALK";
+
+      if ($("voiceStatus")?.textContent === "SPEAK NOW") {
+        $("voiceStatus").textContent = "MIC READY";
+      }
+    };
+
+    $("micButton")?.addEventListener("click", () => {
+      if (listening) {
+        recognition.stop();
+      } else {
+        try {
+          recognition.start();
+        } catch (_) {
+          if ($("voiceStatus")) {
+            $("voiceStatus").textContent = "MIC BUSY · TRY AGAIN";
+          }
+        }
+      }
+    });
+
+    if ($("voiceStatus")) {
+      $("voiceStatus").textContent = "MIC READY · " + SPEECH_LANGUAGE;
+    }
+  } else {
+    if ($("micButton")) {
+      $("micButton").disabled = true;
+      $("micButton").textContent = "🎙 VOICE NOT SUPPORTED";
+    }
+    if ($("voiceStatus")) {
+      $("voiceStatus").textContent = "TRY A SUPPORTED CHROME BROWSER";
+    }
+  }
+
+  terminalLine("[SYS] J.A.R.V.I.S command engine v3.4 loaded.");
+  terminalLine("[INFO] Type help to view available commands.");
+  terminalLine("[INFO] Gemini integration is optional and requires your own API key.");
+})();
