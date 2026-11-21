@@ -7,7 +7,7 @@
   const $ = (id) => document.getElementById(id);
   const API_KEY_STORAGE = "jarvis_key";
   const MEMORY_STORAGE = "jarvis_local_memories";
-  const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-flash-latest"];
+  const GEMINI_MODELS = ["gemini-3.8-flash", "gemini-flash-latest"];
   const SPEECH_LANGUAGE = "en-US"; // Change to te-IN for Telugu speech recognition.
 
   const chatLog = $("chatLog");
